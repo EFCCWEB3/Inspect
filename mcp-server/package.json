@@ -1,0 +1,24 @@
+{
+  "name": "@inspect/mcp-vuln-server",
+  "version": "1.0.0",
+  "description": "MCP tool server for EVM vulnerability detection — exposes scanner and analyzer as JSON-RPC 2.0 tools",
+  "main": "src/server.ts",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["mcp", "evm", "vulnerability", "scanner"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
+  }
+}

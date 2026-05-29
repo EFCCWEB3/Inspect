@@ -1,0 +1,39 @@
+# agenc-core configuration for the EVM vulnerability detection tool.
+#
+# Copy the relevant sections into ~/.agenc/config.toml or use the CLI commands
+# shown in the comments below.
+
+# ── Provider: Ollama (local LLM) ─────────────────────────────────────
+# agenc-core talks to Ollama for reasoning and report generation.
+# qwen2.5-coder:7b is the most reliable small model for tool calling.
+#
+# Setup:
+#   curl -fsSL https://ollama.ai/install.sh | sh
+#   ollama pull qwen2.5-coder:7b
+
+[providers.ollama]
+base_url = "http://localhost:11434"
+default_model = "qwen2.5-coder:7b"
+
+# ── MCP Server: EVM Vulnerability Detector ────────────────────────────
+# This registers the Inspect MCP tool server with agenc-core.
+# It exposes: scan_bytecode, scan_contract, analyze_trace, static_analysis
+#
+# CLI equivalent:
+#   agenc mcp add-json evm-vuln-detector '{"command":"npx","args":["tsx","mcp-server/src/server.ts"],"cwd":"/path/to/Inspect"}'
+#
+# Or for project-scoped config:
+#   agenc mcp add-json evm-vuln-detector '{"command":"npx","args":["tsx","mcp-server/src/server.ts"]}' --scope project
+
+[mcp_servers.evm-vuln-detector]
+command = "npx"
+args = ["tsx", "mcp-server/src/server.ts"]
+# cwd = "/path/to/Inspect"  # ← set this to your Inspect repo checkout
+enabled = true
+timeout = 30000
+
+# Optional: restrict which tools are exposed
+# enabled_tools = ["scan_bytecode", "scan_contract", "analyze_trace", "static_analysis"]
+
+# Optional: auto-approve tool calls (skip permission prompts)
+# default_tools_approval_mode = "auto-approve"

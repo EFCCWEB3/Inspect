@@ -1,0 +1,26 @@
+# Rust
+scanner/target/
+
+# Node
+mcp-server/node_modules/
+mcp-server/dist/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local

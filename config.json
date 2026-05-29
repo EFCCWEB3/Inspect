@@ -1,0 +1,43 @@
+{
+  "evm_vuln_detector": {
+    "version": "1.0.0",
+    "chains": {
+      "ethereum": {
+        "rpc_url": "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
+        "chain_id": 1,
+        "explorer": "https://etherscan.io"
+      },
+      "bsc": {
+        "rpc_url": "https://bsc-dataseed.binance.org",
+        "chain_id": 56,
+        "explorer": "https://bscscan.com"
+      },
+      "arbitrum": {
+        "rpc_url": "https://arb1.arbitrum.io/rpc",
+        "chain_id": 42161,
+        "explorer": "https://arbiscan.io"
+      }
+    },
+    "scanner": {
+      "ngram_window": 3,
+      "jaccard_threshold_override": null,
+      "binary_path": "scanner/target/release/evm-scanner"
+    },
+    "analyzer": {
+      "trace_timeout_seconds": 30,
+      "max_call_depth": 50
+    },
+    "mcp_server": {
+      "command": "npx",
+      "args": ["tsx", "mcp-server/src/server.ts"],
+      "transport": "stdio"
+    },
+    "ollama": {
+      "base_url": "http://localhost:11434",
+      "model": "qwen2.5-coder:7b",
+      "temperature": 0.3,
+      "max_tokens": 2048,
+      "fallback_models": ["llama3.1:8b", "codellama:13b"]
+    }
+  }
+}
