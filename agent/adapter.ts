@@ -1,67 +1,107 @@
 /**
- * agenc-core adapter for the EVM vulnerability detection pipeline.
+ * agenc-core integration for the EVM vulnerability detection pipeline.
  *
- * Connects the MCP tool server to agenc-core so the agent can:
- * 1. Call scan_bytecode / scan_contract to detect vulnerabilities
- * 2. Call analyze_trace to find reentrancy cycles
- * 3. Feed results to Ollama for human-readable reporting
+ * This file documents how the Inspect MCP tools connect to agenc-core.
+ * agenc-core is the orchestrator — it runs the daemon, manages agents,
+ * calls MCP tools, and talks to Ollama for report generation.
  *
- * Usage with agenc:
- *   agenc mcp add-json '{
- *     "command": "npx",
- *     "args": ["tsx", "mcp-server/src/server.ts"],
- *     "env": {}
- *   }'
+ * Architecture:
+ *   Rust bytecode scanner  ─┐
+ *   Python graph analyzer  ─┤── MCP tool server (stdio) ── agenc-core ── Ollama
+ *   Static analysis        ─┘
  *
- * Then in your agent config, the tools become available as:
- *   - scan_bytecode
- *   - scan_contract
- *   - analyze_trace
- *   - static_analysis
+ * agenc-core runtime (https://github.com/tetsuo-ai/agenc-core):
+ *   - runtime/src/mcp-client/manager.ts   — connects to our MCP server
+ *   - runtime/src/llm/providers/ollama/   — talks to Ollama for reasoning
+ *   - runtime/src/app-server/agent-cli.ts — runs background agents
+ *   - runtime/src/app-server/daemon-cli.ts — manages the daemon lifecycle
+ *
+ * @module
  */
 
-export interface AgencToolConfig {
-  command: string;
-  args: string[];
-  env?: Record<string, string>;
-}
-
-export const MCP_SERVER_CONFIG: AgencToolConfig = {
-  command: "npx",
-  args: ["tsx", "mcp-server/src/server.ts"],
-  env: {},
-};
+// ── MCP Server Configuration ──────────────────────────────────────────
+// This matches agenc-core's MCPServerConfig interface
+// (runtime/src/mcp-client/types.ts:26)
 
 /**
- * Example agenc-core workflow for scanning a contract:
+ * MCP server config for agenc-core registration.
  *
- * ```typescript
- * import { Agent } from "agenc-core";
+ * Register via CLI:
+ *   agenc mcp add-json evm-vuln-detector '{"command":"npx","args":["tsx","mcp-server/src/server.ts"]}'
  *
- * const agent = new Agent({
- *   model: "qwen2.5-coder:7b",  // Ollama model
- *   provider: "ollama",
- * });
- *
- * // Add the MCP vulnerability detection tools
- * await agent.mcp.addServer(MCP_SERVER_CONFIG);
- *
- * // Scan a contract
- * const result = await agent.run(
- *   "Scan contract 0x... on Ethereum mainnet for vulnerabilities"
- * );
- * ```
+ * Or via config.toml:
+ *   [mcp_servers.evm-vuln-detector]
+ *   command = "npx"
+ *   args = ["tsx", "mcp-server/src/server.ts"]
  */
-export const AGENT_SYSTEM_PROMPT = `You are an EVM smart contract security auditor with access to
-vulnerability detection tools. When asked to analyze a contract or transaction:
+export const MCP_SERVER_CONFIG = {
+  name: "evm-vuln-detector",
+  transport: "stdio" as const,
+  command: "npx",
+  args: ["tsx", "mcp-server/src/server.ts"],
+  enabled: true,
+  timeout: 30000,
+} satisfies McpServerConfigShape;
 
-1. Use scan_contract or scan_bytecode to check for known vulnerability patterns
-2. If a transaction hash is provided, use analyze_trace for call graph analysis
-3. Use static_analysis as a quick check when no RPC is available
-4. Synthesize findings into a clear security report
+/** Shape matching agenc-core's McpServerConfig (config/schema.ts:229) */
+interface McpServerConfigShape {
+  name: string;
+  transport?: "stdio" | "sse" | "http" | "websocket" | "ws";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  enabled?: boolean;
+  timeout?: number;
+  required?: boolean;
+  enabled_tools?: string[];
+  disabled_tools?: string[];
+}
 
-Always include:
-- Risk rating (CRITICAL/HIGH/MEDIUM/LOW)
-- Specific vulnerability locations (opcode offsets)
-- Remediation recommendations
-- References to known similar exploits`;
+// ── Ollama Provider Configuration ──────────────────────────────────────
+// Matches agenc-core's OllamaProviderConfig
+// (runtime/src/llm/providers/ollama/types.ts)
+
+/** Ollama config for agenc-core's provider system. */
+export const OLLAMA_CONFIG = {
+  host: "http://localhost:11434",
+  model: "qwen2.5-coder:7b",
+  keepAlive: "5m",
+} as const;
+
+// ── Recommended Models ─────────────────────────────────────────────────
+// For tool-calling reliability with agenc-core + Ollama:
+//   1. qwen2.5-coder:7b  — best small option, most reliable tool calls
+//   2. llama3.1:8b        — good general-purpose
+//   3. codellama:13b      — larger, better code understanding
+//   4. gemma4:e4b         — used by agenc-core's CourtGuard security (see docs/security/)
+
+// ── Usage Examples ─────────────────────────────────────────────────────
+//
+// 1. Start the daemon:
+//    agenc daemon start
+//
+// 2. Register the MCP server:
+//    agenc mcp add-json evm-vuln-detector \
+//      '{"command":"npx","args":["tsx","mcp-server/src/server.ts"],"cwd":"/path/to/Inspect"}'
+//
+// 3. Configure Ollama provider in ~/.agenc/config.toml:
+//    [providers.ollama]
+//    base_url = "http://localhost:11434"
+//    default_model = "qwen2.5-coder:7b"
+//
+// 4. Run an agent with a vulnerability scanning objective:
+//    agenc agent start "scan contract 0x... on ethereum for reentrancy vulnerabilities"
+//
+// 5. Or use the interactive TUI:
+//    agenc --provider ollama --model qwen2.5-coder:7b
+//    > scan this contract for flash loan vulnerabilities: 0x...
+//
+// 6. Run a one-shot scan:
+//    agenc --no-tui --provider ollama "analyze transaction 0x... for reentrancy"
+//
+// The agent will:
+//   a) See the MCP tools (scan_bytecode, scan_contract, analyze_trace, static_analysis)
+//   b) Choose which tool(s) to call based on your objective
+//   c) Pass the structured results to Ollama
+//   d) Generate a human-readable vulnerability report

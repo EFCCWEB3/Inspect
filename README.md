@@ -75,11 +75,9 @@ cd mcp-server && npm install
 # Run the server
 npx tsx src/server.ts
 
-# Register with agenc-core
-agenc mcp add-json '{
-  "command": "npx",
-  "args": ["tsx", "mcp-server/src/server.ts"]
-}'
+# Register with agenc-core (name + JSON config)
+agenc mcp add-json evm-vuln-detector \
+  '{"command":"npx","args":["tsx","src/server.ts"]}'
 ```
 
 **Exposed tools:**
@@ -90,23 +88,67 @@ agenc mcp add-json '{
 | `analyze_trace` | Full tx trace analysis with Tarjan SCC |
 | `static_analysis` | Quick static analysis without RPC |
 
-### Layer 4 — Agent + Ollama (`agent/`)
+### Layer 4 — agenc-core + Ollama (`agent/`)
 
-Connects to a local Ollama instance to generate human-readable vulnerability reports from raw scan data.
+[agenc-core](https://github.com/tetsuo-ai/agenc-core) is the **orchestration and reasoning layer**. It doesn't detect vulnerabilities itself — it coordinates the detection tools via MCP and uses Ollama to interpret and report findings.
+
+```
+Your math engines (Rust/Python)   ← Layers 1-2
+        ↓
+MCP tool server (Layer 3)         ← exposes tools over JSON-RPC 2.0 stdio
+        ↓
+agenc-core                        ← orchestrator: daemon, agent runtime, MCP client
+        ↓
+Ollama (local LLM)                ← agenc-core talks to this for reasoning
+```
+
+**What agenc-core does:**
+- **Runs the daemon** — background process managing agents ([`daemon-cli.ts`](https://github.com/tetsuo-ai/agenc-core/blob/main/runtime/src/app-server/daemon-cli.ts))
+- **Runs your agent** — give it an objective in plain English, it calls MCP tools in the right order ([`agent-cli.ts`](https://github.com/tetsuo-ai/agenc-core/blob/main/runtime/src/app-server/agent-cli.ts))
+- **Calls your tools via MCP** — sends structured inputs, reads JSON outputs ([`mcp-client/manager.ts`](https://github.com/tetsuo-ai/agenc-core/blob/main/runtime/src/mcp-client/manager.ts))
+- **Talks to Ollama** — passes findings to the LLM for human-readable reports ([`ollama/adapter.ts`](https://github.com/tetsuo-ai/agenc-core/blob/main/runtime/src/llm/providers/ollama/adapter.ts))
+
+## Quick Start with agenc-core
 
 ```bash
-# Install Ollama
+# 1. One-time setup (builds scanner, installs deps, registers MCP server)
+./scripts/setup-agenc.sh
+
+# 2. Or manual setup:
+# Install Ollama + model
 curl -fsSL https://ollama.ai/install.sh | sh
 ollama pull qwen2.5-coder:7b
 
-# Generate a report
-python -m agent.vuln_reporter scan_results.json [trace_results.json]
+# Register MCP server with agenc-core
+agenc mcp add-json evm-vuln-detector \
+  '{"command":"npx","args":["tsx","mcp-server/src/server.ts"],"cwd":"/path/to/Inspect/mcp-server"}'
 
-# Check Ollama connectivity
-python -m agent.vuln_reporter --check-ollama
+# Configure Ollama in ~/.agenc/config.toml
+cat >> ~/.agenc/config.toml << 'EOF'
+[providers.ollama]
+base_url = "http://localhost:11434"
+default_model = "qwen2.5-coder:7b"
+EOF
+
+# 3. Start the daemon
+agenc daemon start
+
+# 4. Run a vulnerability scan as a background agent
+agenc agent start "scan contract 0xdAC17F958D2ee523a2206206994597C13D831ec7 on ethereum for reentrancy"
+
+# 5. Or use the interactive TUI
+agenc --provider ollama --model qwen2.5-coder:7b
+
+# 6. Or one-shot mode
+agenc --no-tui --provider ollama "analyze this bytecode for flash loans: 0x60006000F155"
 ```
 
-Falls back to structured text reports when Ollama is unavailable.
+The standalone Python reporter (`agent/vuln_reporter.py`) also works without agenc-core:
+
+```bash
+python -m agent.vuln_reporter scan_results.json [trace_results.json]
+python -m agent.vuln_reporter --check-ollama
+```
 
 ## Inspect Token (INSP)
 
